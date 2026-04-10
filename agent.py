@@ -41,16 +41,19 @@ def analizar_intencion(consulta):
                 "valor": memoria["ultimo_valor"]
             }
 
-    prompt = f"""Analiza esta consulta sobre logs de red y responde SOLO en JSON válido.
-Consulta: "{consulta}"
+    prompt = f"""You are a log analysis assistant. Analyze the query and respond ONLY with valid JSON, regardless of the language of the query.
+Consulta / Query: "{consulta}"
 
 Responde con este formato exacto:
 {{"intencion": "numero" | "error" | "tiempo" | "numero_error", "valor": "el valor correspondiente"}}
 
 Reglas — aplica la primera que coincida:
 
-1. **numero_error**: SOLO si hay un número (569XXXXXXXXX) Y un código de error (TIMEOUT, FAIL, DROP, etc.)
-   Ejemplo: "el 56912345678 tuvo TIMEOUT?" → {{"intencion": "numero_error", "valor": "56912345678|TIMEOUT"}}
+1. **numero_error**: SOLO si hay un número (569XXXXXXXXX) Y el usuario menciona EXPLÍCITAMENTE un código de error (TIMEOUT, FAIL, DROP, etc.).
+   Si el usuario solo dice "errores", "errors", "problemas" sin un código específico → usa "numero" en vez de "numero_error".
+   Ejemplo correcto: "el 56912345678 tuvo TIMEOUT?" → {{"intencion": "numero_error", "valor": "56912345678|TIMEOUT"}}
+   Ejemplo correcto: "show me the errors for 56912345678" → {{"intencion": "numero", "valor": "56912345678"}}
+   Ejemplo INCORRECTO: "show me the errors for 56912345678" → {{"intencion": "numero_error", "valor": "56912345678|TIMEOUT"}} ← NUNCA inventes el código de error
 
 2. **numero**: Si hay un número 569XXXXXXXXX y NO menciona código de error.
    Ejemplo: "qué pasó con el 56923456789?" → {{"intencion": "numero", "valor": "56923456789"}}
@@ -156,8 +159,9 @@ Muestra de líneas ({n_muestra} de {total_err} totales):
     elif tipo == 'numero_error':
         partes = valor.split('|')
 
-        if len(partes) < 2:
-            print("⚠️  numero_error sin tipo de error — fallando a búsqueda por número")
+        ERRORES_GENERICOS = ['ERROR', 'FAIL', 'FALLO', 'ERRORS', 'ERRORES']
+        if len(partes) < 2 or partes[1].strip().upper() in ERRORES_GENERICOS:
+            print("⚠️  Error genérico o sin tipo — mostrando todos los errores del número")
             datos = buscar_por_numero(valor.strip(), log_path)
             total = datos['total_interacciones']
             total_err = datos['total_errores']
@@ -191,17 +195,19 @@ Muestra de líneas ({n_muestra} de {total_err} totales):
     memoria["ultimo_contexto"] = contexto
 
     # ── RESUMEN VIA LLM ──
-    prompt_resumen = f"""Eres un asistente experto en análisis de logs de telecomunicaciones.
+    prompt_resumen = f"""You are an expert telecom log analysis assistant.
+CRITICAL: Detect the language of the user's question and respond ENTIRELY in that same language.
+If the question is in English, respond in English. Si la pregunta es en español, responde en español.
 
-El usuario preguntó: "{consulta}"
+User question: "{consulta}"
 
 Datos encontrados:
 {contexto}
 
-Genera un resumen claro y técnico. IMPORTANTE: usa los números exactos del contexto, no los inventes.
-1. Qué encontraste (totales reales)
-2. Qué tipos de errores hay y cuándo ocurrieron
-3. Conclusión sobre el estado del número o servicio
-4. Muestra las líneas del log incluidas en el contexto"""
+Generate a clear technical summary using ONLY the exact numbers from the context:
+1. What you found (real totals)
+2. Error types and when they occurred
+3. Conclusion about the number or service status
+4. Show the log lines included in the context"""
 
     return llamar_ollama(prompt_resumen)
