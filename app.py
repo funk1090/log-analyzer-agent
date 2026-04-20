@@ -3,6 +3,7 @@ import os
 import glob
 from agent import agente_log
 from tools import obtener_logs_de_folder, analisis_general
+from ollama_client import get_token_stats, estimar_costo
 
 st.set_page_config(page_title="Log Analyzer Agent", page_icon="🔍", layout="wide", initial_sidebar_state="expanded")
 
@@ -125,6 +126,29 @@ with st.sidebar:
     for q in quick_queries:
         if st.button(q, key=f"quick_{q}", use_container_width=True):
             st.session_state["quick_query"] = q
+
+    st.markdown("---")
+    st.markdown('<div class="section-title">📊 Tokens de sesión</div>', unsafe_allow_html=True)
+    stats = get_token_stats()
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-value">{stats['total_tokens']:,}</div>
+        <div class="metric-label">Total tokens</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value">{stats['total_llamadas']}</div>
+        <div class="metric-label">Llamadas al LLM</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="section-title">💰 Costo estimado</div>', unsafe_allow_html=True)
+    for modelo in ["gpt-4o-mini", "claude-haiku-4-5", "gpt-4o", "claude-sonnet-4-6"]:
+        costo = estimar_costo(modelo)
+        st.markdown(f"""
+        <div class="pattern-card">
+            <span class="pattern-label">{modelo}</span><br>
+            <span class="pattern-num">${costo}</span>
+        </div>""", unsafe_allow_html=True)
 
     st.markdown("---")
     if st.button("🗑️ Limpiar conversación", use_container_width=True):
