@@ -8,17 +8,21 @@
 
 Conversational agent for telecom log analysis, powered by **Ollama + LLaMA 3**, running completely locally.
 
-Ask questions in plain language about log files: search by phone number, error type, or time window — and receive an AI-generated summary.
+Ask questions in plain language about log files: search by phone number, error type, or time window — and receive an AI-generated summary. Includes a web interface built with Streamlit, automatic pattern detection, and token usage tracking.
 
 ---
 
 ### ✨ Features
 
 - 🔍 Search by **phone number** (e.g. `569XXXXXXXX`)
-- ❌ Search by **error type** (e.g. `TIMEOUT`, `DROP`, `FAIL`)
+- ❌ Search by **error type** (e.g. `TIMEOUT`, `CALL_DROP`, `AUTH_FAIL`)
 - 🕐 Search by **time window** (e.g. "last hour", "last 30 minutes")
-- 🧠 **Session memory** — the agent remembers the context of the previous query
-- 💬 LLM-generated summary in natural language
+- 📊 **Automatic pattern detection** — top errors, critical numbers, faulty nodes, and peak hours loaded automatically on startup
+- 🗂️ **Multi-log support** — select a single file or an entire folder of logs
+- 🌐 **Web interface** built with Streamlit — no terminal required
+- 🧠 **Session memory** — the agent remembers context from the previous query
+- 🌍 **Automatic language detection** — responds in the same language as the query (Spanish, English, Portuguese, etc.)
+- 💰 **Token usage tracking** — monitors token consumption and estimates cost per model (GPT-4o, Claude, etc.)
 - 🔒 100% local — no external APIs, no data sent to the cloud
 
 ---
@@ -26,17 +30,18 @@ Ask questions in plain language about log files: search by phone number, error t
 ### 🧱 Architecture
 
 ```
-main.py          →  Conversation loop with the user
-agent.py         →  Orchestrator: analyzes intent and calls tools
-tools.py         →  Log file search functions
-ollama_client.py →  HTTP client for Ollama (LLaMA 3)
+main.py            →  Terminal conversation loop
+agent.py           →  Orchestrator: analyzes intent and calls tools
+tools.py           →  Log search functions + automatic pattern analysis
+ollama_client.py   →  HTTP client for Ollama (LLaMA 3) + token tracking
+app.py             →  Streamlit web interface
+generate_log.py    →  Synthetic log generator for testing (50,000 lines)
 ```
 
 ---
 
 ### ⚙️ Requirements
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 - [Ollama](https://ollama.com/) running locally with the `llama3` model
 - Python 3.9+
 
@@ -63,20 +68,28 @@ cd log-analyzer-agent
 #### 3. Install dependencies
 
 ```bash
-pip install requests
+pip install requests streamlit
 ```
 
-#### 4. Add your log file
+#### 4. Generate a test log (optional)
 
-Place your `.log` file in the project root. A sample log file (`sample.log`) is included so you can test it immediately.
+A sample log file (`telecom_demo.log`) is already included. To regenerate it:
 
-Expected format per line:
-
-```
-YYYY-MM-DD HH:MM:SS,mmm | <number> | <field> | <error_type>: <detail>
+```bash
+python generate_log.py
 ```
 
-#### 5. Run the agent
+This creates a 50,000-line synthetic telecom log with realistic error patterns, including 5 "problematic" numbers with ~60% error rates.
+
+#### 5. Run the web interface
+
+```bash
+streamlit run app.py
+```
+
+Opens automatically at `http://localhost:8501`
+
+#### 6. Or run in terminal
 
 ```bash
 python main.py
@@ -87,11 +100,15 @@ python main.py
 ### 💬 Example queries
 
 ```
-❓ Your query: What errors did number 56912345678 have?
-❓ Your query: Show me all TIMEOUT errors in the last hour
-❓ Your query: Were there any DROP errors in the last 2 hours?
-❓ Your query: How many times did 56998765432 fail with a FAIL error?
+❓ Give me a summary of the log
+❓ Show me all errors for number 56912345678
+❓ Show me all TIMEOUT errors
+❓ Were there any CALL_DROP errors in the last 2 hours?
+❓ What errors occurred in the last 60 minutes?
+❓ Did 56934567890 have AUTH_FAIL errors?
 ```
+
+The agent responds in the same language as the query.
 
 ---
 
@@ -99,25 +116,48 @@ python main.py
 
 ```
 log-analyzer-agent/
-├── main.py            # Entry point
-├── agent.py           # Main agent + intent analysis
-├── tools.py           # Log search tools
-├── ollama_client.py   # Ollama client
-├── sample.log         # Sample log file for testing
+├── main.py              # Terminal entry point
+├── agent.py             # Main agent + intent analysis + session memory
+├── tools.py             # Log search tools + pattern analysis
+├── ollama_client.py     # Ollama client + token tracking + cost estimation
+├── app.py               # Streamlit web interface
+├── generate_log.py      # Synthetic log generator
+├── telecom_demo.log     # Sample log file (50,000 lines)
 ├── .gitignore
 └── README.md
 ```
 
 ---
 
-### 🛣️ Roadmap / Future ideas
+### 📊 Token tracking & cost estimation
 
-- [ ] Support for multiple log files simultaneously
-- [ ] Web interface (Streamlit or FastAPI)
+After each query, the interface shows accumulated token usage and estimated cost if the same session were run on a paid LLM provider:
+
+| Model | Prompt | Response |
+|---|---|---|
+| `gpt-4o` | $2.50 / 1M | $10.00 / 1M |
+| `gpt-4o-mini` | $0.15 / 1M | $0.60 / 1M |
+| `claude-sonnet-4-6` | $3.00 / 1M | $15.00 / 1M |
+| `claude-haiku-4-5` | $0.25 / 1M | $1.25 / 1M |
+
+---
+
+### 🛣️ Roadmap
+
+- [x] Conversational agent in terminal
+- [x] Search by number, error type, and time window
+- [x] Session memory
+- [x] Automatic language detection
+- [x] Web interface with Streamlit
+- [x] Automatic pattern detection on log load
+- [x] Multi-log support (single file or entire folder)
+- [x] Token usage tracking and cost estimation per model
+- [ ] Correlation playbooks — rule-based pattern matching for known failure signatures
+- [ ] Resolution suggestions based on detected patterns
+- [ ] FastAPI REST endpoints
 - [ ] Support for other Ollama models (Mistral, Gemma, etc.)
-- [ ] Export results to CSV or JSON
-- [ ] Automatic log format detection
-- [ ] Unit tests
+- [ ] Database backend (SQLite → PostgreSQL)
+- [ ] Export results to PDF / CSV
 
 ---
 
@@ -131,17 +171,21 @@ MIT — free to use, modify and distribute.
 
 Agente conversacional para análisis de logs de telecomunicaciones, powered by **Ollama + LLaMA 3**, corriendo completamente en local.
 
-Permite hacer consultas en lenguaje natural sobre archivos de log: buscar por número de teléfono, tipo de error, o ventana de tiempo — y recibir un resumen generado por IA.
+Permite hacer consultas en lenguaje natural sobre archivos de log: buscar por número de teléfono, tipo de error, o ventana de tiempo — y recibir un resumen generado por IA. Incluye interfaz web con Streamlit, detección automática de patrones, y tracking de consumo de tokens.
 
 ---
 
 ### ✨ Características
 
 - 🔍 Búsqueda por **número de teléfono** (ej: `569XXXXXXXX`)
-- ❌ Búsqueda por **tipo de error** (ej: `TIMEOUT`, `DROP`, `FAIL`)
+- ❌ Búsqueda por **tipo de error** (ej: `TIMEOUT`, `CALL_DROP`, `AUTH_FAIL`)
 - 🕐 Búsqueda por **ventana de tiempo** (ej: "última hora", "últimos 30 minutos")
+- 📊 **Detección automática de patrones** — top errores, números críticos, nodos con fallas y franjas horarias, cargados automáticamente al iniciar
+- 🗂️ **Soporte multi-log** — selecciona un archivo individual o una carpeta completa
+- 🌐 **Interfaz web** construida con Streamlit — sin necesidad de terminal
 - 🧠 **Memoria de sesión** — el agente recuerda el contexto de la consulta anterior
-- 💬 Resumen generado por LLM en lenguaje natural
+- 🌍 **Detección de idioma automática** — responde en el mismo idioma de la consulta (español, inglés, portugués, etc.)
+- 💰 **Tracking de tokens** — monitorea el consumo de tokens y estima el costo por modelo (GPT-4o, Claude, etc.)
 - 🔒 100% local — sin APIs externas ni datos enviados a la nube
 
 ---
@@ -149,17 +193,18 @@ Permite hacer consultas en lenguaje natural sobre archivos de log: buscar por n�
 ### 🧱 Arquitectura
 
 ```
-main.py          →  Loop de conversación con el usuario
-agent.py         →  Orquestador: analiza intención y llama a las tools
-tools.py         →  Funciones de búsqueda sobre el archivo de log
-ollama_client.py →  Cliente HTTP para Ollama (LLaMA 3)
+main.py            →  Loop de conversación en terminal
+agent.py           →  Orquestador: analiza intención y llama a las tools
+tools.py           →  Funciones de búsqueda + análisis de patrones
+ollama_client.py   →  Cliente HTTP para Ollama (LLaMA 3) + tracking de tokens
+app.py             →  Interfaz web con Streamlit
+generate_log.py    →  Generador de logs sintéticos para pruebas (50.000 líneas)
 ```
 
 ---
 
 ### ⚙️ Requisitos
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 - [Ollama](https://ollama.com/) corriendo localmente con el modelo `llama3`
 - Python 3.9+
 
@@ -186,20 +231,28 @@ cd log-analyzer-agent
 #### 3. Instalar dependencias
 
 ```bash
-pip install requests
+pip install requests streamlit
 ```
 
-#### 4. Agregar tu archivo de log
+#### 4. Generar un log de prueba (opcional)
 
-Coloca tu archivo `.log` en la raíz del proyecto. Se incluye un archivo de log de ejemplo (`sample.log`) para que puedas probarlo de inmediato.
+El repositorio ya incluye un archivo de log de ejemplo (`telecom_demo.log`). Para regenerarlo:
 
-El formato esperado por línea es:
-
-```
-YYYY-MM-DD HH:MM:SS,mmm | <numero> | <campo> | <tipo_error>: <detalle>
+```bash
+python generate_log.py
 ```
 
-#### 5. Ejecutar el agente
+Esto crea un log sintético de 50.000 líneas con patrones de error realistas, incluyendo 5 números "problemáticos" con ~60% de tasa de error.
+
+#### 5. Ejecutar la interfaz web
+
+```bash
+streamlit run app.py
+```
+
+Se abre automáticamente en `http://localhost:8501`
+
+#### 6. O ejecutar en terminal
 
 ```bash
 python main.py
@@ -210,11 +263,15 @@ python main.py
 ### 💬 Ejemplos de consultas
 
 ```
-❓ Tu consulta: ¿Qué errores tuvo el número 56912345678?
-❓ Tu consulta: Muéstrame todos los TIMEOUT de la última hora
-❓ Tu consulta: ¿Hubo errores DROP en las últimas 2 horas?
-❓ Tu consulta: ¿Cuántas veces falló el 56998765432 con error FAIL?
+❓ Dame un resumen del log
+❓ Muéstrame todos los errores del número 56912345678
+❓ Muéstrame todos los errores TIMEOUT
+❓ ¿Hubo errores CALL_DROP en las últimas 2 horas?
+❓ ¿Qué errores hubo en los últimos 60 minutos?
+❓ ¿El 56934567890 tuvo errores AUTH_FAIL?
 ```
+
+El agente responde en el mismo idioma de la consulta.
 
 ---
 
@@ -222,25 +279,48 @@ python main.py
 
 ```
 log-analyzer-agent/
-├── main.py            # Entry point
-├── agent.py           # Agente principal + análisis de intención
-├── tools.py           # Herramientas de búsqueda en logs
-├── ollama_client.py   # Cliente Ollama
-├── sample.log         # Archivo de log de ejemplo para pruebas
+├── main.py              # Entry point terminal
+├── agent.py             # Agente principal + análisis de intención + memoria
+├── tools.py             # Herramientas de búsqueda + análisis de patrones
+├── ollama_client.py     # Cliente Ollama + tracking de tokens + estimación de costos
+├── app.py               # Interfaz web Streamlit
+├── generate_log.py      # Generador de logs sintéticos
+├── telecom_demo.log     # Log de ejemplo (50.000 líneas)
 ├── .gitignore
 └── README.md
 ```
 
 ---
 
-### 🛣️ Roadmap / Ideas futuras
+### 📊 Tracking de tokens y estimación de costos
 
-- [ ] Soporte para múltiples archivos de log simultáneos
-- [ ] Interfaz web (Streamlit o FastAPI)
+Tras cada consulta, la interfaz muestra el consumo acumulado de tokens y el costo estimado si la misma sesión se ejecutara en un proveedor de LLM de pago:
+
+| Modelo | Prompt | Respuesta |
+|---|---|---|
+| `gpt-4o` | $2.50 / 1M | $10.00 / 1M |
+| `gpt-4o-mini` | $0.15 / 1M | $0.60 / 1M |
+| `claude-sonnet-4-6` | $3.00 / 1M | $15.00 / 1M |
+| `claude-haiku-4-5` | $0.25 / 1M | $1.25 / 1M |
+
+---
+
+### 🛣️ Roadmap
+
+- [x] Agente conversacional en terminal
+- [x] Búsqueda por número, tipo de error y ventana de tiempo
+- [x] Memoria de sesión
+- [x] Detección de idioma automática
+- [x] Interfaz web con Streamlit
+- [x] Detección automática de patrones al cargar el log
+- [x] Soporte multi-log (archivo individual o carpeta completa)
+- [x] Tracking de tokens y estimación de costos por modelo
+- [ ] Playbooks de correlación — reglas para identificar patrones de falla conocidos
+- [ ] Sugerencias de resolución basadas en patrones detectados
+- [ ] FastAPI + endpoints REST
 - [ ] Soporte para otros modelos Ollama (Mistral, Gemma, etc.)
-- [ ] Exportar resultados a CSV o JSON
-- [ ] Detección automática del formato de log
-- [ ] Tests unitarios
+- [ ] Base de datos (SQLite → PostgreSQL)
+- [ ] Exportar resultados a PDF / CSV
 
 ---
 
