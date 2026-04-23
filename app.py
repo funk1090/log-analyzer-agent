@@ -197,6 +197,13 @@ else:
                 try:
                     respuesta = agente_log(consulta_a_procesar, st.session_state.log_path)
                     st.session_state.historial.append({"consulta": consulta_a_procesar, "respuesta": respuesta, "tipo": ""})
+
+                    # Stats en terminal
+                    stats = get_token_stats()
+                    print(f"\n📊 Stats acumulado — llamadas: {stats['total_llamadas']} | tokens totales: {stats['total_tokens']:,}")
+                    for modelo in ["gpt-4o-mini", "claude-haiku-4-5", "gpt-4o", "claude-sonnet-4-6"]:
+                        costo = estimar_costo(modelo)
+                        print(f"   💰 {modelo:<22}: ${costo}")
                 except Exception as e:
                     st.error(f"Error: {e}")
             st.rerun()

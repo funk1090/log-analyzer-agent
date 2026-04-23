@@ -26,51 +26,92 @@ def resumen_lineas(lineas, total_real, label="errores"):
     return texto, len(muestra)
 
 def analizar_intencion(consulta):
-    if any(p in consulta.lower() for p in ["ahora", "solo", "continua", "continuar", "mismos", "otra vez", "now", "only", "continue", "same"]):
+    PALABRAS_CONTINUIDAD = [
+        "ahora", "solo", "continua", "continuar", "mismos", "otra vez",
+        "now", "only", "continue", "same", "también", "y los", "and the",
+        "del mismo", "for the same"
+    ]
+    if any(p in consulta.lower() for p in PALABRAS_CONTINUIDAD):
         if memoria["ultima_intencion"]:
+            print("🧠 Usando memoria previa")
             return {"intencion": memoria["ultima_intencion"], "valor": memoria["ultimo_valor"]}
 
-    prompt = f"""You are a log analysis assistant. Analyze the query and respond ONLY with valid JSON, regardless of the language of the query.
+    prompt = f"""You are a classifier. Read the query and return ONLY a JSON object. No explanation, no markdown, no extra text.
+
 Query: "{consulta}"
 
-Respond with this exact format:
-{{"intencion": "numero" | "error" | "tiempo" | "numero_error" | "resumen", "valor": "the corresponding value"}}
+Return this exact JSON format:
+{{"intencion": "...", "valor": "...", "idioma": "..."}}
 
-Rules — apply the first one that matches:
+Classification rules (apply the first match):
 
-1. **resumen**: General summary or overview request with no specific number or error.
-   Examples:
-   - "give me a summary" → {{"intencion": "resumen", "valor": "general"}}
-   - "analiza el log" → {{"intencion": "resumen", "valor": "general"}}
+1. "resumen" — user wants a general overview/summary with no specific number or error code
+   valor = "general"
+   Matches: "summary", "resumen", "overview", "analiza el log", "general status", "dame un resumen"
 
-2. **numero_error**: ONLY if there is a real phone number (569XXXXXXXXX) AND a specific error code explicitly mentioned.
-   Correct: "did 56912345678 have TIMEOUT?" → {{"intencion": "numero_error", "valor": "56912345678|TIMEOUT"}}
-   WRONG: never invent an error code if user didn't say one.
+2. "numero_error" — user mentions a phone number starting with 569 (11 digits) AND a specific error code
+   valor = "<number>|<error_code>"
+   Example: "did 56912345678 have TIMEOUT?" → {{"intencion":"numero_error","valor":"56912345678|TIMEOUT"}}
+   NEVER invent an error code. If no code is explicitly stated, use "numero" instead.
 
-3. **numero**: Phone number 569XXXXXXXXX present, no specific error code.
-   Example: "show me errors for 56912345678" → {{"intencion": "numero", "valor": "56912345678"}}
+3. "numero" — user mentions a phone number starting with 569 (11 digits), no specific error code
+   valor = the phone number
+    Examples:
+   - "show me errors for 56912345678" → {{"intencion":"numero","valor":"56912345678"}}
+   - "muestrame el error para el siguiente numero 56912345678" → {{"intencion":"numero","valor":"56912345678"}}
+   - "muestrame la informacion para el numero 56912345678" → {{"intencion":"numero","valor":"56912345678"}}
+   - "que paso con el 56912345678" → {{"intencion":"numero","valor":"56912345678"}}
+   - "errores del 56912345678" → {{"intencion":"numero","valor":"56912345678"}}
 
-4. **error**: Specific error code mentioned, no phone number.
-   Examples:
-   - "show me all TIMEOUT" → {{"intencion": "error", "valor": "TIMEOUT"}}
-   - "hay CALL_DROP?" → {{"intencion": "error", "valor": "CALL_DROP"}}
+4. "error" — user mentions a specific error code or keyword, no phone number
+   Error codes: TIMEOUT, CALL_DROP, CALL_FAIL, AUTH_FAIL, AUTH_TIMEOUT, SMS_FAIL, SMS_TIMEOUT, DATA_DROP, DATA_FAIL, ROAM_FAIL, NET_DROP, NET_TIMEOUT
+   Also match informal variations: "timeout errors", "errores de timeout", "call drops", "auth failures", "caídas de llamada"
+   valor = the normalized error code in uppercase
+   Example: "show me AUTH_FAIL errors" → {{"intencion":"error","valor":"AUTH_FAIL"}}
+   Example: "muestrame los timeout" → {{"intencion":"error","valor":"TIMEOUT"}}
+   Example: "errores de caída de llamada" → {{"intencion":"error","valor":"CALL_DROP"}}
 
-5. **tiempo**: Explicit time window only. TIMEOUT is an error code, NOT a time window.
-   Examples:
-   - "last hour" → {{"intencion": "tiempo", "valor": "60"}}
-   - "últimos 30 minutos" → {{"intencion": "tiempo", "valor": "30"}}
-   - "last 2 hours" → {{"intencion": "tiempo", "valor": "120"}}
+5. "tiempo" — user mentions a time window. TIMEOUT is an error code, NOT a time window.
+   valor = minutes as a number string
+   Example: "last hour" → {{"intencion":"tiempo","valor":"60"}}
+   Example: "últimos 30 minutos" → {{"intencion":"tiempo","valor":"30"}}
+   Example: "last 2 hours" → {{"intencion":"tiempo","valor":"120"}}
 
-CRITICAL:
-- NEVER invent phone numbers or error codes.
-- TIMEOUT is an error code, not a time window.
-- Respond ONLY with the JSON."""
+LANGUAGE DETECTION:
+- Detect the language of the query and add it to the JSON
+- "idioma" must be the full language name (e.g. "Spanish", "English", "Portuguese", "French")
+- Example: "muestrame los errores" → "idioma": "Spanish"
+- Example: "show me errors" → "idioma": "English"
+- Example: "mostra os erros" → "idioma": "Portuguese"
+
+STRICT RULES:
+- Return ONLY the JSON object, nothing else
+- NEVER use "AUTH_FAIL" or any error code as the value of "intencion"
+- NEVER invent phone numbers
+- TIMEOUT in "intencion" field is always wrong — use "error" with valor "TIMEOUT"
+- If nothing matches, return {{"intencion":"resumen","valor":"general"}}"""
 
     respuesta = llamar_ollama(prompt).strip()
+
+    # Limpiar backticks
     if "```" in respuesta:
-        respuesta = respuesta.split("```")[1]
+        partes = respuesta.split("```")
+        respuesta = partes[1] if len(partes) > 1 else partes[0]
         if respuesta.startswith("json"):
             respuesta = respuesta[4:]
+
+    respuesta = respuesta.strip()
+
+    # Reintento si la respuesta está vacía o no es JSON
+    if not respuesta or not respuesta.startswith("{"):
+        print("⚠️  Respuesta inválida, reintentando...")
+        respuesta = llamar_ollama(prompt).strip()
+        if "```" in respuesta:
+            respuesta = respuesta.split("```")[1]
+            if respuesta.startswith("json"):
+                respuesta = respuesta[4:]
+        respuesta = respuesta.strip()
+
     return json.loads(respuesta)
 
 
@@ -78,19 +119,29 @@ def agente_log(consulta, log_path='telecom_demo.log'):
     print(f"\n🔍 Procesando: {consulta}")
     try:
         intencion = analizar_intencion(consulta)
-        tipo  = intencion.get('intencion')
-        valor = str(intencion.get('valor', ''))
-        print(f"📋 Intención detectada: {tipo} | Valor: {valor}")
+        tipo   = intencion.get('intencion')
+        valor  = str(intencion.get('valor', ''))
+        idioma = intencion.get('idioma', 'Spanish')
+        print(f"📋 Intención detectada: {tipo} | Valor: {valor} | Idioma: {idioma}")
     except Exception as e:
         return f"No pude entender la consulta: {e}"
 
-    if tipo in [None, "", "desconocida"]:
-        if memoria["ultima_intencion"]:
-            print("🧠 Usando memoria previa")
-            tipo  = memoria["ultima_intencion"]
-            valor = memoria["ultimo_valor"]
+    if tipo in [None, "", "desconocida", None]:
+    # Inferir intención desde el valor cuando el LLM falla
+        if valor == "general":
+            print("🔁 Fallback → resumen")
+            tipo = "resumen"
+        elif valor.isdigit():
+            print("🔁 Fallback → tiempo")
+            tipo = "tiempo"
+        elif any(e in valor.upper() for e in ["TIMEOUT","DROP","FAIL","AUTH","SMS","NET","ROAM","DATA","CALL"]):
+            print("🔁 Fallback → error")
+            tipo = "error"
+        elif valor.startswith("569") and len(valor) == 11:
+            print("🔁 Fallback → numero")
+            tipo = "numero"
         else:
-            return "No pude determinar qué buscar."
+            return "No pude interpretar la consulta, ¿puedes reformularla?"
 
     if tipo == 'resumen':
         datos    = analisis_general(log_path)
@@ -189,19 +240,19 @@ Muestra de líneas ({n_muestra} de {total_err} totales):
     memoria["ultimo_valor"]     = valor
     memoria["ultimo_contexto"]  = contexto
 
-    prompt_resumen = f"""You are an expert telecom log analysis assistant.
-CRITICAL: Detect the language of the user's question and respond ENTIRELY in that same language.
-If the question is in English, respond in English. Si la pregunta es en español, responde en español.
+    prompt_resumen = f"""You MUST respond ONLY in {idioma}. Do not use any other language.
+
+You are a telecom log analysis expert. Using ONLY the data below (do not invent numbers):
 
 User question: "{consulta}"
 
-Data found:
 {contexto}
 
-Generate a clear technical summary using ONLY the exact numbers from the context, do not invent data:
-1. What you found (real totals)
-2. Error types and when they occurred
-3. Conclusion about the number or service status
-4. Show the log lines included in the context"""
+Provide a technical summary with:
+1. Total findings (use exact numbers from data)
+2. Error types and timestamps
+3. Service status conclusion
+4. Sample log lines from context
+NOTE: Do NOT invent or fabricate log lines. Only show log lines if they appear in the data above."""
 
     return llamar_ollama(prompt_resumen)
