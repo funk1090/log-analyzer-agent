@@ -1,0 +1,212 @@
+{
+  "_schema_version": "1.0",
+  "_descripcion": "Playbooks de correlación para red 4G LTE. Cada playbook define un patrón de falla conocido, sus condiciones medibles, la causa probable y las acciones recomendadas. El campo 'investigar_en' es usado por el conector SSH (Etapa 3b) para consultar el elemento de red sospechoso.",
+
+  "playbooks": [
+
+    {
+      "id": "PB001",
+      "nombre": "Tormenta de autenticación",
+      "descripcion": "Volumen anormal de fallas de autenticación en poco tiempo y concentradas en un nodo. En LTE apunta al MME o a la interfaz Diameter hacia el HSS.",
+      "severidad": "alta",
+
+      "condiciones": {
+        "_nota": "Todas las condiciones deben cumplirse simultáneamente para disparar el playbook.",
+        "codigos_error": ["AUTH_FAIL", "AUTH_TIMEOUT"],
+        "min_ocurrencias": 50,
+        "ventana_minutos": 10,
+        "concentrado_en_nodo": true,
+        "min_numeros_afectados": 10
+      },
+
+      "causa_probable": "HSS inaccesible o sobrecargado, o falla en la interfaz Diameter S6a entre MME y HSS.",
+
+      "elemento_sospechoso": "HSS",
+
+      "acciones": [
+        "Verificar estado del HSS y su carga de CPU/memoria.",
+        "Revisar la interfaz Diameter S6a entre el MME del nodo afectado y el HSS.",
+        "Verificar si el problema afecta a todos los MMEs o solo al nodo concentrado.",
+        "Escalar a equipo de core network si la interfaz S6a muestra pérdida de mensajes.",
+        "Revisar si hubo un cambio de configuración reciente en el HSS."
+      ],
+
+      "investigar_en": {
+        "tipo_ne": "HSS",
+        "intencion": "estado_nodo",
+        "contexto": "Verificar estado del HSS y contadores de la interfaz Diameter S6a."
+      }
+    },
+
+    {
+      "id": "PB002",
+      "nombre": "Degradación de nodo de radio",
+      "descripcion": "Caídas de llamada o fallas de establecimiento concentradas en un único eNodeB. Sugiere un problema de radio, hardware o backhaul en ese nodo específico.",
+      "severidad": "alta",
+
+      "condiciones": {
+        "codigos_error": ["CALL_DROP", "CALL_FAIL"],
+        "min_ocurrencias": 30,
+        "ventana_minutos": 15,
+        "concentrado_en_nodo": true,
+        "min_numeros_afectados": 5
+      },
+
+      "causa_probable": "Falla de hardware en el eNodeB, interferencia RF, degradación de la interfaz S1 hacia el MME, o problema de backhaul en ese sitio.",
+
+      "elemento_sospechoso": "eNodeB",
+
+      "acciones": [
+        "Consultar alarmas activas en el eNodeB afectado.",
+        "Verificar el estado de la interfaz S1 (eNodeB hacia MME).",
+        "Revisar parámetros RF: potencia de transmisión, VSWR, estado de antenas.",
+        "Verificar conectividad de backhaul (latencia, pérdida de paquetes).",
+        "Comparar KPIs del nodo afectado con nodos vecinos para aislar el problema.",
+        "Programar visita de campo si los parámetros RF muestran degradación."
+      ],
+
+      "investigar_en": {
+        "tipo_ne": "eNodeB",
+        "intencion": "estado_nodo",
+        "contexto": "Verificar alarmas activas, estado de la interfaz S1 y parámetros RF."
+      }
+    },
+
+    {
+      "id": "PB003",
+      "nombre": "Falla del plano de datos",
+      "descripcion": "Fallas o caídas de sesión de datos distribuidas en múltiples nodos simultáneamente. En LTE apunta al SGW o PGW, que son elementos centrales compartidos por todos los eNodeBs.",
+      "severidad": "alta",
+
+      "condiciones": {
+        "codigos_error": ["DATA_FAIL", "DATA_DROP"],
+        "min_ocurrencias": 40,
+        "ventana_minutos": 10,
+        "concentrado_en_nodo": false,
+        "min_numeros_afectados": 20
+      },
+
+      "causa_probable": "Sobrecarga o falla en el SGW o PGW. También puede ser un problema en la interfaz S11 (MME-SGW) o S5/S8 (SGW-PGW).",
+
+      "elemento_sospechoso": "SGW",
+
+      "acciones": [
+        "Verificar estado y carga del SGW (CPU, memoria, sesiones activas).",
+        "Verificar estado del PGW y su conectividad hacia internet/IMS.",
+        "Revisar la interfaz S11 entre MME y SGW.",
+        "Revisar la interfaz S5 entre SGW y PGW.",
+        "Verificar si hay un evento de mantenimiento planificado en el core de datos.",
+        "Escalar a equipo de core packet si SGW o PGW reportan alarmas."
+      ],
+
+      "investigar_en": {
+        "tipo_ne": "SGW",
+        "intencion": "estado_nodo",
+        "contexto": "Verificar carga del SGW, sesiones activas y estado de interfaces S11 y S5."
+      }
+    },
+
+    {
+      "id": "PB004",
+      "nombre": "Falla de roaming",
+      "descripcion": "Acumulación de fallas de attach de roaming. Puede ser un problema de configuración local o un problema en la red del operador visitado.",
+      "severidad": "media",
+
+      "condiciones": {
+        "codigos_error": ["ROAM_FAIL"],
+        "min_ocurrencias": 20,
+        "ventana_minutos": 30,
+        "concentrado_en_nodo": false,
+        "min_numeros_afectados": 10
+      },
+
+      "causa_probable": "Error de configuración en el perfil de roaming del HSS, problema en el acuerdo de roaming, o falla en la red del operador visitado (MME o HSS visitado).",
+
+      "elemento_sospechoso": "HSS",
+
+      "acciones": [
+        "Identificar el PLMN de los números afectados para determinar el operador visitado.",
+        "Verificar el perfil de roaming en el HSS para los MSISDNs afectados.",
+        "Contactar al equipo de roaming para verificar el estado del acuerdo con el operador visitado.",
+        "Revisar trazas de señalización GTP entre el PGW local y el PGW visitado.",
+        "Verificar si el problema es para todos los destinos de roaming o uno específico."
+      ],
+
+      "investigar_en": {
+        "tipo_ne": "HSS",
+        "intencion": "estado_subscriptor",
+        "contexto": "Verificar perfil de roaming y acuerdos habilitados para los MSISDNs afectados."
+      }
+    },
+
+    {
+      "id": "PB005",
+      "nombre": "Degradación de transporte o core",
+      "descripcion": "Timeouts y caídas de red distribuidas en múltiples nodos y servicios simultáneamente. Patrón característico de un problema en la red de transporte IP o en el core de señalización.",
+      "severidad": "critica",
+
+      "condiciones": {
+        "codigos_error": ["TIMEOUT", "NET_DROP", "NET_TIMEOUT"],
+        "min_ocurrencias": 100,
+        "ventana_minutos": 10,
+        "concentrado_en_nodo": false,
+        "min_numeros_afectados": 30
+      },
+
+      "causa_probable": "Problema en la red de transporte IP (MPLS, fibra), congestión en el core de señalización, o falla en un elemento de routing central.",
+
+      "elemento_sospechoso": "TRANSPORTE",
+
+      "acciones": [
+        "Verificar el estado de los enlaces de transporte troncales (pérdida de paquetes, latencia).",
+        "Revisar alarmas en el NMS/OSS para todos los elementos de transporte.",
+        "Identificar si la degradación empezó en todos los nodos al mismo tiempo (evento masivo) o se propagó gradualmente.",
+        "Verificar si hubo cambios de ruteo o mantenimientos en la red de transporte.",
+        "Escalar inmediatamente a equipo de transporte y NOC de nivel 2.",
+        "Activar bridge call con todos los equipos de red relevantes."
+      ],
+
+      "investigar_en": {
+        "tipo_ne": "NMS",
+        "intencion": "alarmas_activas",
+        "contexto": "Obtener listado de alarmas activas en todos los elementos de transporte y core."
+      }
+    },
+
+    {
+      "id": "PB006",
+      "nombre": "Falla multi-servicio en cliente aislado",
+      "descripcion": "Un único número acumula fallas en varios servicios distintos (voz, datos, SMS) en un período corto. A diferencia de los patrones masivos, este apunta a un problema de aprovisionamiento o SIM, no de red.",
+      "severidad": "baja",
+
+      "condiciones": {
+        "_nota": "Este playbook se evalúa sobre un número específico, no sobre el total del log.",
+        "codigos_error": ["AUTH_FAIL", "CALL_FAIL", "DATA_FAIL", "SMS_FAIL"],
+        "min_ocurrencias": 5,
+        "ventana_minutos": 60,
+        "concentrado_en_nodo": false,
+        "min_tipos_error_distintos": 2,
+        "aplica_a": "numero_individual"
+      },
+
+      "causa_probable": "Error en el perfil de aprovisionamiento del subscriptor en el HSS, SIM dañada o bloqueada, o problema de configuración de servicios en el BSS/CRM.",
+
+      "elemento_sospechoso": "HSS",
+
+      "acciones": [
+        "Consultar el estado del subscriptor en el HSS: perfil de servicios, estado de la SIM.",
+        "Verificar en el CRM/BSS si el cliente tiene algún flag de bloqueo o deuda.",
+        "Revisar si el perfil de servicios fue modificado recientemente.",
+        "Solicitar al cliente que pruebe con otra SIM para descartar falla de hardware.",
+        "Si el perfil está corrupto, ejecutar reprovisión del subscriptor en el HSS."
+      ],
+
+      "investigar_en": {
+        "tipo_ne": "HSS",
+        "intencion": "estado_subscriptor",
+        "contexto": "Verificar perfil de servicios, estado de SIM y fecha de última modificación del subscriptor."
+      }
+    }
+
+  ]
+}

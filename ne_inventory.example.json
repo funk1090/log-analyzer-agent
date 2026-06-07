@@ -1,0 +1,24 @@
+{
+  "_schema_version": "1.0",
+  "_descripcion": "Ejemplo de inventario. Copia como ne_inventory.json y completa con tus datos.",
+
+  "elementos": [
+    {
+      "id": "NE-SIM-01",
+      "nombre": "MME Simulado (Docker)",
+      "tipo": "MME",
+      "vendor": "Simulado",
+      "host": "localhost",
+      "puerto": 2222,
+      "usuario": "TU_USUARIO",
+      "auth": { "metodo": "password", "password": "TU_PASSWORD" },
+      "timeout_segundos": 10,
+      "activo": true,
+      "comandos": {
+        "estado_nodo":        "/ruta/al/script.sh",
+        "alarmas_activas":    "/ruta/al/script.sh",
+        "estado_subscriptor": "/ruta/al/script.sh"
+      }
+    }
+  ]
+}

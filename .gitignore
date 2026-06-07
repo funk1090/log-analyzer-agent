@@ -41,3 +41,9 @@ Thumbs.db
 # ── Misc ──
 *.bak
 *.tmp
+
+# ── Windows/WSL metadata ──
+*:Zone.Identifier
+
+# ── Inventario de NEs (contiene credenciales) ──
+ne_inventory.json

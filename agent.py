@@ -3,6 +3,8 @@ import json
 from datetime import datetime
 from tools import buscar_por_error, buscar_por_numero, buscar_por_tiempo, analisis_general
 from ollama_client import llamar_ollama
+from correlator import correlacionar, formatear_para_contexto
+from connector_ssh import investigar, formatear_resultado
 
 MAX_LINEAS_LLM = 20
 
@@ -131,6 +133,9 @@ def agente_log(consulta, log_path='telecom_demo.log'):
         if valor == "general":
             print("🔁 Fallback → resumen")
             tipo = "resumen"
+        elif valor.startswith("569") and len(valor) == 11 and valor.isdigit():
+            print("🔁 Fallback → numero")
+            tipo = "numero"
         elif valor.isdigit():
             print("🔁 Fallback → tiempo")
             tipo = "tiempo"
@@ -168,9 +173,10 @@ peak_hours:
 {top_hora}"""
 
     elif tipo == 'numero':
-        datos     = buscar_por_numero(valor, log_path)
-        total     = datos['total_interacciones']
-        total_err = datos['total_errores']
+        datos        = buscar_por_numero(valor, log_path)
+        datos_numero = datos                              # para PB006
+        total        = datos['total_interacciones']
+        total_err    = datos['total_errores']
         lineas_error = [dict_a_linea(d) for d in (datos['interacciones'] or []) if d['level'] == 'ERROR']
         muestra, n_muestra = resumen_lineas(lineas_error, total_err)
         contexto = f"""Número: {datos['numero']}
@@ -240,6 +246,36 @@ Muestra de líneas ({n_muestra} de {total_err} totales):
     memoria["ultimo_valor"]     = valor
     memoria["ultimo_contexto"]  = contexto
 
+    # ── CORRELACIÓN ──────────────────────────────────────────────────────────
+    # datos_numero solo existe cuando la intención fue 'numero' o 'numero_error'
+    # En ese caso el correlator también evalúa PB006 (falla aislada en cliente)
+    _datos_num   = locals().get("datos_numero")
+    disparados   = correlacionar(log_path, datos_numero=_datos_num)
+    diagnostico  = formatear_para_contexto(disparados)
+    n_disparados = len(disparados)
+    if n_disparados:
+        sev_top = disparados[0]["severidad"].upper()
+        print(f"🚨 Correlator: {n_disparados} playbook(s) disparado(s) — severidad máxima: {sev_top}")
+    else:
+        print("✅ Correlator: sin patrones de falla detectados")
+
+    # ── INVESTIGACIÓN ACTIVA (SSH) ────────────────────────────────────────────
+    # Si hay playbooks disparados, conectar al NE sospechoso del más grave
+    investigacion = ""
+    if disparados:
+        pb_top = disparados[0]
+        inv_en = pb_top.get("investigar_en", {})
+        tipo_ne   = inv_en.get("tipo_ne")
+        intencion = inv_en.get("intencion", "estado_nodo")
+        if tipo_ne:
+            try:
+                print(f"🔌 Iniciando investigación activa → {tipo_ne} / {intencion}")
+                resultado_ssh = investigar(tipo_ne, intencion)
+                investigacion = formatear_resultado(resultado_ssh)
+            except Exception as e:
+                investigacion = f"=== INVESTIGACIÓN ACTIVA ===\nNo disponible: {e}"
+    # ─────────────────────────────────────────────────────────────────────────
+
     prompt_resumen = f"""You MUST respond ONLY in {idioma}. Do not use any other language.
 
 You are a telecom log analysis expert. Using ONLY the data below (do not invent numbers):
@@ -248,11 +284,20 @@ User question: "{consulta}"
 
 {contexto}
 
+{diagnostico}
+
+{investigacion}
+
 Provide a technical summary with:
 1. Total findings (use exact numbers from data)
 2. Error types and timestamps
 3. Service status conclusion
 4. Sample log lines from context
+5. If the DIAGNÓSTICO AUTOMÁTICO section is present and shows detected playbooks, include:
+   - The pattern name and severity
+   - The probable cause
+   - The recommended actions as a numbered list
+6. If the INVESTIGACIÓN ACTIVA section is present, include the real-time data obtained from the network element.
 NOTE: Do NOT invent or fabricate log lines. Only show log lines if they appear in the data above."""
 
     return llamar_ollama(prompt_resumen)
